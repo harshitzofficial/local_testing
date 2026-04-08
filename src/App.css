@@ -1,0 +1,63 @@
+
+#root {
+  margin: 0 auto;
+  text-align: center;
+}
+
+@keyframes marquee {
+    0%   { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+}
+
+.text-marquee {
+    display: inline-block;
+    animation: marquee 4s linear infinite;
+    white-space: nowrap;
+}
+
+.text-bounce {
+    display: inline-block;
+    animation: bounce-x 2.5s ease-in-out infinite;
+}
+
+.flipdown .rotor,
+.flipdown .rotor-leaf,
+.flipdown .rotor-leaf-front,
+.flipdown .rotor-leaf-rear {
+
+  backface-visibility: hidden !important;
+  -webkit-backface-visibility: hidden !important;
+  transform-style: preserve-3d !important;
+}
+
+
+.flipdown.flipdown__theme-dark .rotor,
+.flipdown.flipdown__theme-dark .rotor-top,
+.flipdown.flipdown__theme-dark .rotor-leaf-front {
+  background-color: #05071a !important;
+  color: #fff !important;
+}
+
+
+
+.timer-no-labels .fcc__digit_block {
+  margin-bottom: 0 !important;
+}
+
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+

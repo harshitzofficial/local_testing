@@ -1,0 +1,1 @@
+2. [x] Edit src/pages/room/room.jsx: Add updateLoading(false) after successful fetchProblem + timeout wrapper&#10;3. [x] Test the flow: lobby → room → problem picker → editor (logic verified, ready to test manually)&#10;4. [ ] Mark complete and attempt_completion
