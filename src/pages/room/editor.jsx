@@ -1,14 +1,10 @@
-
-
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { PenLine } from "lucide-react";
-
 import MonacoEditor from "@monaco-editor/react";
 import debounce from "lodash.debounce";
 import Timer from "./timer";
 import "./scrollbar.css";
 import { useFirebase } from "../../services/firebase";
-import { useMemo } from "react";
 
 function Editor({
   endTime,
@@ -22,13 +18,16 @@ function Editor({
   onFocus,
   center,
   onClose,
- setShowWhiteboard
+  setShowWhiteboard
 }) {
   const f = useFirebase();
   const editorRef = useRef(null);
   const isHydrated = useRef(false);
+  
+  // 🚀 LOGIC FIX: Ref to prevent cursor jumping during sync
+  const isRemoteUpdate = useRef(false); 
 
-  const problemId = problem?.questionId;
+  const problemId = problem?.questionId || problem?.questionFrontendId || problem?.titleSlug || "unknown_problem";
   const [selectedLang, setSelectedLang] = useState("JavaScript");
   const [typingStatus, setTypingStatus] = useState({
     typing: false,
@@ -59,7 +58,7 @@ function Editor({
 
   const getFallbackJS = () => {
     try {
-      const meta = JSON.parse(problem.metaData);
+      const meta = JSON.parse(problem?.metaData || "{}");
       const name = meta.name || "solution";
       const params = meta.params?.map(p => p.name).join(", ") || "";
       return `var ${name} = function(${params}) {\n\n};`;
@@ -93,18 +92,16 @@ function Editor({
     );
 
     isHydrated.current = false;
-  }, [problemId]);
+  }, [problemId, codeSnippets]);
 
-  const currentCode =
-    codeByProblem?.[problemId]?.[selectedLang] || "";
+  const currentCode = codeByProblem?.[problemId]?.[selectedLang] || "";
 
   useEffect(() => {
     if (!roomId || !problemId) return;
 
     const unsubscribe = f.subscribeToEditor(roomId, editorData => {
       if (!editorData) return;
-
-      if (editorData.questionId !== problem.questionId) return;
+      if (editorData.questionId !== problemId) return;
 
       if (!is_driver) {
         if (editorData.language) {
@@ -113,12 +110,20 @@ function Editor({
           );
         }
 
-        setTypingStatus(editorData.status);
+        setTypingStatus(editorData.status || { typing: false });
+
+        // 🚀 LOGIC FIX: Sync code directly to Monaco to avoid React state resetting the cursor
+        if (editorRef.current && editorData.code !== undefined) {
+          const localCode = editorRef.current.getValue();
+          if (localCode !== editorData.code) {
+            isRemoteUpdate.current = true;
+            editorRef.current.setValue(editorData.code);
+            isRemoteUpdate.current = false;
+          }
+        }
 
         setCodeByProblem(prev => {
-        
-          if (!editorData.language) return;
-
+          if (!editorData.language) return prev;
           const targetLang = editorData.language;
 
           return {
@@ -135,7 +140,7 @@ function Editor({
     });
 
     return unsubscribe;
-  }, [roomId, problemId, is_driver]);
+  }, [roomId, problemId, is_driver, f]);
 
   const sendTypingSignal = async isTyping => {
     await f.writeCode(roomId, {
@@ -147,18 +152,22 @@ function Editor({
   const debouncedWrite = useCallback(
     debounce((code, lang) => {
       f.writeCode(roomId, {
-        questionId: problem.questionId,
+        questionId: problem?.questionId || problem?.questionFrontendId || problem?.titleSlug || "unknown",
         lastChangeBy: driver_uname,
         updatedAt: Date.now(),
         language: lang, 
         code: code
       });
-    }, 300),
-    [roomId, driver_uname, problem.questionId] 
+      // 🚀 LOGIC FIX: Turn off typing indicator when done typing
+      f.writeCode(roomId, { typing: false, driver: driver_uname }, "status/");
+    }, 500), // Adjusted to 500ms for smoother debounce
+    [roomId, driver_uname, problem?.questionId, problem?.questionFrontendId, problem?.titleSlug, f] 
   );
 
   const handleEditorChange = newValue => {
-    if (!is_driver) return;
+    // 🚀 LOGIC FIX: Ignore changes if they came from the remote server
+    if (!is_driver || isRemoteUpdate.current) return;
+    
     setCodeByProblem(prev => ({
       ...prev,
       [problemId]: {
@@ -172,9 +181,11 @@ function Editor({
   };
 
   const timeUp = () => {
-    setRunning(editorRef.current?.getValue(), selectedLang, false)
+    if (roundStatus !== "coding" || !problem || !problemId) {
+      return; 
+    }
+    setRunning(editorRef.current?.getValue(), selectedLang, false);
   }
-
 
   return (
     <>
@@ -204,69 +215,57 @@ function Editor({
             )}
           </div>
 
-
-          <div className="flex text-sm justify-between py-4  custom-scrollbar items-center mb-4">
-            {/* <button onClick={(e) => e.stopPropagation()}
-              className="text-xs text-gray-400 me-4 justify-start hover:text-white font-bold border border-none tracking-wider">
-              Hints
-            </button> */}
+          <div className="flex text-sm justify-between py-4 custom-scrollbar items-center mb-4">
             <button onClick={(e) => {e.stopPropagation(); setShowWhiteboard(true)}}
-  className="flex items-center cursor-pointer gap-1 text-xs text-gray-400 hover:text-white font-bold border-none tracking-wider">
+              className="flex items-center cursor-pointer gap-1 text-xs text-gray-400 hover:text-white font-bold border-none tracking-wider">
               <PenLine size={15} />
               Whiteboard
             </button>
             
-
-
-
             <div className="flex-1 flex justify-center min-w-[200px]">
               <Timer onComplete={timeUp} targetDate={endTime} />
             </div>
 
-            {is_driver && <select
+            {is_driver && (
+              <select
+                onClick={(e) => e.stopPropagation()}
+                value={selectedLang}
+                onChange={async (e) => {
+                  const lang = e.target.value;
+                  setSelectedLang(lang);
 
-              onClick={(e) => e.stopPropagation()}
-              value={selectedLang}
-              onChange={async (e) => {
-                // if (!is_driver) return;
-                const lang = e.target.value;
-                setSelectedLang(lang);
+                  await f.writeCode(roomId, {
+                    questionId: problemId,
+                    lastChangeBy: driver_uname,
+                    language: lang,
+                    updatedAt: Date.now(),
+                    code: codeByProblem?.[problemId]?.[lang] || ""
+                  });
+                }}
+                className="bg-gray-800 cursor-pointer justify-end text-xs text-white rounded px-2 py-1"
+              >
+                {codeSnippets?.map(s => (
+                  <option key={s.lang} value={s.lang}>{s.lang}</option>
+                ))}
+              </select>
+            )}
 
-                await f.writeCode(roomId, {
-                  questionId: problem.questionId,
-                  lastChangeBy: driver_uname,
-                  language: lang,
-                  updatedAt: Date.now(),
-                  code: codeByProblem?.[problem.questionId]?.[lang] || ""
-                });
-              }}
-              className="bg-gray-800 cursor-pointer justify-end text-xs text-white rounded px-2 py-1"
-            >
-              {codeSnippets?.map(s => (
-                <option key={s.lang} value={s.lang}>{s.lang}</option>
-              ))}
-            </select>
-            }
-
-            {
-              !is_driver && <label className="font-semibold text-cyan-400">
+            {!is_driver && (
+              <label className="font-semibold text-cyan-400">
                 {selectedLang}
               </label>
-            }
+            )}
           </div>
-
-
-
 
           <div className="flex-1 bg-[#0b1020] rounded-lg p-3 text-sm font-mono text-left text-white/80
              overflow-auto custom-scrollbar flex items-center justify-center"
             onClick={(e) => e.stopPropagation()}
           >
-
             {roundStatus === "coding" && (
               <MonacoEditor
                 onMount={editor => (editorRef.current = editor)}
                 height="100%"
+                theme="vs-dark"
                 language={monacoLanguageMap[selectedLang]}
                 value={currentCode}
                 onChange={handleEditorChange}
@@ -280,34 +279,27 @@ function Editor({
               />
             )}
             {roundStatus === "running" && (
-              <span className="text-white/60">Code is Running...</span>
+              <span className="text-white/60 text-lg animate-pulse">Running Code...</span>
             )}
           </div>
 
           <div className="mt-3 flex justify-between">
-
             <button disabled={!is_driver} onClick={(e) => {
               e.stopPropagation();
               setRunning(editorRef.current?.getValue(), selectedLang)
             }}
-
               className="cursor-pointer flex items-center gap-2 text-cyan-400 disabled:text-gray-500 disabled:cursor-not-allowed group transition-colors"
             >
               <span className="group-disabled:text-gray-500 transition-colors">▶</span>
               <span className="text-sm font-semibold">Run Code</span>
             </button>
 
-
             <button disabled={!is_driver}
-              className={`
-  px-4 py-1.5 rounded-lg text-sm text-white font-semibold transition-colors
-  ${is_driver
-                  ? "bg-cyan-500  cursor-pointer"
-                  : "bg-gray-300 cursor-not-allowed"}
-`}
+              className={`px-4 py-1.5 rounded-lg text-sm text-white font-semibold transition-colors
+                ${is_driver ? "bg-cyan-500 cursor-pointer" : "bg-gray-300 cursor-not-allowed"}
+              `}
               onClick={(e) => {
                 e.stopPropagation();
-                const currentCode = editorRef.current ? editorRef.current.getValue() : allCode[selectedLang];
                 setRunning(editorRef.current?.getValue(), selectedLang, false)
               }}
             >
@@ -315,25 +307,14 @@ function Editor({
             </button>
           </div>
 
-          {/* {!is_driver && (
-            <div className="text-xs text-gray-400">
-              {typingStatus.typing
-                ? `${typingStatus.driver} is typing...`
-                : "Idle"}
+          {!is_driver && (
+            <div className="flex items-center gap-2 mb-2">
+              <div className={`w-2 h-2 rounded-full ${typingStatus?.typing ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
+              <span className="text-xs text-gray-400">
+                {typingStatus?.typing ? `${typingStatus.driver} is typing...` : 'Idle'}
+              </span>
             </div>
-          )} */}
-
-          {!is_driver && <div className="flex items-center gap-2 mb-2">
-            <div className={`w-2 h-2 rounded-full ${typingStatus?.typing ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
-            <span className="text-xs text-gray-400">
-              {typingStatus?.typing
-                ? `${typingStatus.driver} is typing...`
-                : 'Idle'}
-            </span>
-          </div>
-          }
-
-
+          )}
         </div>
       </div >
     </>
@@ -341,4 +322,3 @@ function Editor({
 }
 
 export default Editor;
-

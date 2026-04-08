@@ -14,48 +14,34 @@ function Lobby(props) {
     const f = useFirebase();
     let list = [];
 
-    const [url, seturl] = useState('');
     const [participants, setParticipants] = useState([]);
     const [host_id, setHostId] = useState(null);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        if (!roomId) {
-            return;
-        }
+        if (!roomId) return;
 
         const unsubscribe = f.subscribeToRoom(roomId, (roomData) => {
             const gameUrl = roomData?.gameState?.gameUrl;
-            const driver = roomData?.gameState?.driver_id;
-
-            if (gameUrl) {
-            }
             const gameStatus = roomData?.gameState?.gameStatus;
 
-            if (gameStatus != "waiting") {
+            if (gameStatus != "waiting" && gameUrl) {
                 navigate(gameUrl);
             }
 
             if (roomData?.gameState?.participants_list) {
                 list = Object.values(roomData?.gameState?.participants_list)
-
                 if (list) {
-                    const userList = list;
-                    setParticipants(userList);
+                    setParticipants(list);
                 }
             }
         });
 
-        return () => {
-            unsubscribe();
-        };
-
+        return () => unsubscribe();
     }, [roomId]);
-
 
     useEffect(() => {
         if (!roomId) return;
-
         const fetchHost = async () => {
             try {
                 const host = await f.getRoomData(roomId, 'host_id');
@@ -64,64 +50,50 @@ function Lobby(props) {
                 console.error("Failed to fetch host:", error);
             }
         };
-
         fetchHost();
     }, []);
 
-
-    // ==========================================
-    // 🔥 TEMPORARY TOKEN FETCH FOR THUNDER CLIENT 🔥
-    // Delete this useEffect once you are done testing!
-    // ==========================================
     useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged(async (user) => {
             if (user) {
                 const token = await user.getIdToken();
-                console.log("🔥 YOUR FIREBASE TOKEN 🔥");
-                console.log(token);
+                console.log("🔥 FIREBASE TOKEN:", token);
             }
         });
-
         return () => unsubscribe();
     }, []);
-    // ==========================================
-
 
     const [time, setTime] = useState(15);
     const [count, setCount] = useState(1);
 
-
     async function startNewGame(id) {
         try {
-            // apiGet already returns the parsed JSON data!
             const data = await apiGet(`createGame?roomId=${roomId}`);
-            console.log('called api create:', data);
-            
-            // Check for data.success instead of response.ok
             if (!data || !data.success) {
                 throw new Error(data?.message || 'Server refused to create game');
             }
-
         } catch (error) {
             console.error("Failed to create game:", error);
-            throw error; // This ensures the room doesn't open if the backend fails
+            throw error;
         }
     }
 
     const createGame = async () => {
         setLoading(true);
         try {
-            // 1. FIRST, initialize the backend safely
             await startNewGame(roomId);
 
-            // 2. ONLY if the backend succeeds, update Firebase to teleport everyone
+            // 🚀 THE LOGIC FIX: Save config values so room.jsx can prevent the timer reset
             const gameStateUpdates = {
-                "config/max_prob": count * participants.length,
-                "config/timer": time,
+                "gameState/config": {
+                    totalDuration: parseInt(time),
+                    problemCount: count * participants.length,
+                },
                 "gameState/gameStatus": "started",
                 "gameState/currentRound": 0,
                 "gameState/roundStatus": "initialising",
                 "gameState/gameUrl": `/${roomId}/room`,
+                "gameState/timerEndTime": null // Start fresh
             };
             
             await f.updateRoomData(gameStateUpdates, roomId, '');

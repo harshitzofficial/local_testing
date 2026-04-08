@@ -4,93 +4,37 @@ import Editor from "./editor";
 import ProblemPicker from "./prob_picker";
 import ProblemScore from "./prob_score";
 import Chat from "./chat";
-import { useNavigate } from "react-router-dom";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useFirebase } from "../../services/firebase";
-// import { auth } from "../../services/firebase";
 import Whiteboard from "./whiteboard";
-import VoiceChat from "./voicechat";
-import { apiGet, apiPost } from "../../services/api"; // Ensure both are imported
+import { apiGet, apiPost } from "../../services/api"; 
+
 function Room(props) {
   const navigate = useNavigate();
   const [showWhiteboard, setShowWhiteboard] = useState(false);
 
   const [focused, setFocused] = useState(null);
   const availableTopics = [
-    "Array",
-    "Hash Table",
-    "Linked List",
-    "Math",
-    "Recursion",
-    "String",
-    "Sliding Window",
-    "Binary Search",
-    "Divide and Conquer",
-    "Two Pointers",
-    "Dynamic Programming",
-    "Greedy",
-    "Trie",
-    "Sorting",
-    "Backtracking",
-    "Stack",
-    "Heap (Priority Queue)",
-    "Merge Sort",
-    "String Matching",
-    "Bit Manipulation",
-    "Matrix",
-    "Monotonic Stack",
-    "Simulation",
-    "Combinatorics",
-    "Memoization",
-    "Depth-First Search",
-    "Tree",
-    "Binary Tree",
-    "Binary Search Tree",
-    "Breadth-First Search",
-    "Union Find",
-    "Graph",
-    "Design",
-    "Doubly-Linked List",
-    "Geometry",
-    "Interactive",
-    "Bucket Sort",
-    "Radix Sort",
-    "Counting",
-    "Data Stream",
-    "Iterator",
-    "Database",
-    "Rolling Hash",
-    "Hash Function",
-    "Shell",
-    "Enumeration",
-    "Number Theory",
-    "Topological Sort",
-    "Prefix Sum",
-    "Quickselect",
-    "Binary Indexed Tree",
-    "Segment Tree",
-    "Line Sweep",
-    "Ordered Set",
-    "Queue",
-    "Monotonic Queue",
-    "Counting Sort",
-    "Brainteaser",
-    "Game Theory",
-    "Eulerian Circuit",
-    "Bitmask",
-    "Randomized",
-    "Reservoir Sampling",
-    "Shortest Path",
-    "Rejection Sampling",
-    "Probability and Statistics",
-    "Suffix Array",
-    "Concurrency",
-    "Minimum Spanning Tree",
-    "Biconnected Component",
-    "Sort",
+    "Array", "Hash Table", "Linked List", "Math", "Recursion", "String",
+    "Sliding Window", "Binary Search", "Divide and Conquer", "Two Pointers",
+    "Dynamic Programming", "Greedy", "Trie", "Sorting", "Backtracking",
+    "Stack", "Heap (Priority Queue)", "Merge Sort", "String Matching",
+    "Bit Manipulation", "Matrix", "Monotonic Stack", "Simulation",
+    "Combinatorics", "Memoization", "Depth-First Search", "Tree",
+    "Binary Tree", "Binary Search Tree", "Breadth-First Search", "Union Find",
+    "Graph", "Design", "Doubly-Linked List", "Geometry", "Interactive",
+    "Bucket Sort", "Radix Sort", "Counting", "Data Stream", "Iterator",
+    "Database", "Rolling Hash", "Hash Function", "Shell", "Enumeration",
+    "Number Theory", "Topological Sort", "Prefix Sum", "Quickselect",
+    "Binary Indexed Tree", "Segment Tree", "Line Sweep", "Ordered Set",
+    "Queue", "Monotonic Queue", "Counting Sort", "Brainteaser",
+    "Game Theory", "Eulerian Circuit", "Bitmask", "Randomized",
+    "Reservoir Sampling", "Shortest Path", "Rejection Sampling",
+    "Probability and Statistics", "Suffix Array", "Concurrency",
+    "Minimum Spanning Tree", "Biconnected Component", "Sort",
     "Strongly Connected Component",
   ];
-  // const [participants, setParticipants] = useState(null);
+  
   const [roundStatus, setRoundStatus] = useState("initialising");
   const [activeProblem, setProblem] = useState(null);
   let user_id = localStorage.getItem("id") || props.user_id;
@@ -98,66 +42,78 @@ function Room(props) {
 
   const [driver_id, setDriver] = useState(null);
   const [driver_uname, setDriverName] = useState(null);
+  const [host_id, setHostId] = useState(null);
 
   const show_prob_screen = driver_id !== null && driver_id === user_id;
-
   const show_guest_screen = driver_id !== null && driver_id !== user_id;
+  
   const [show_loading, updateLoading] = useState(true);
   const loadingMessage =
     show_guest_screen || show_prob_screen
       ? "Setting up the coding environment..."
       : "Loading the session for you...";
+      
   const { roomId } = useParams();
   const f = useFirebase();
-  // const [running, setRunning] = useState(false);
   const [results, setresults] = useState({});
-
   const [endTime, setTimer] = useState(Date.now());
 
-  // const loading = true;
+  // --- ACTIONS ---
 
   const handleConfirmSelection = async (selectedDifficulty, selectedTopic) => {
     updateLoading(true);
     try {
-      // Add 10s timeout to prevent infinite loading
-      await Promise.race([
-        apiGet(
-          `fetchProblem?roomId=${roomId}&difficulty=${selectedDifficulty}&topic=${selectedTopic}`,
-        ),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout: Problem selection took too long')), 10000)
-        )
-      ]);
-      console.log('✅ Problem selected successfully');
-      updateLoading(false);  // ✅ Hide loading on SUCCESS
+      const response = await apiGet(
+          `fetchProblem?roomId=${encodeURIComponent(roomId)}&difficulty=${encodeURIComponent(selectedDifficulty)}&topic=${encodeURIComponent(selectedTopic)}`,
+      );
+      
+      if (!response || response.error) throw new Error(response.error);
+
+      // 🚀 TIMER FIX: Check if we are continuing a session or starting fresh
+      const currentRoomState = await f.getRoomData(roomId); 
+      const sessionConfig = currentRoomState?.gameState?.config;
+      const existingTimer = currentRoomState?.gameState?.timerEndTime;
+
+      const safeProblem = JSON.parse(JSON.stringify(response.problem));
+      
+      const updates = { 
+        "gameState/currentProblem": safeProblem,
+        "gameState/roundStatus": "coding",
+        "gameState/editorCode": safeProblem?.codeSnippets?.find(s => s.lang === "JavaScript")?.code || ""
+      };
+
+      if (!existingTimer) {
+        const durationMinutes = sessionConfig?.totalDuration || 45; 
+        updates["gameState/timerEndTime"] = Date.now() + (durationMinutes * 60 * 1000);
+      }
+
+      await f.updateRoomData(updates, roomId, "");
+      setProblem(safeProblem);
+      updateLoading(false);  
+
     } catch (error) {
       console.error("Selection failed:", error);
-      updateLoading(false);  // ✅ Always hide loading
-      alert(`Could not load problem: ${error.message}. Try another category or check backend.`);
+      updateLoading(false);
     }
   };
 
-// function updateScores() {} // unused
-
   async function startNewProblem() {
     if (driver_id !== user_id) return;
-
     try {
       updateLoading(true);
-      // This rotates the driver and clears the old results in one go
       await apiGet(`nextRound?roomId=${roomId}`);
-
-      // The Firebase subscription in useEffect will catch the status change
-      // to "initialising" and show the ProblemPicker again.
     } catch (error) {
       console.error("Failed to start next round:", error);
-    } finally {
       updateLoading(false);
     }
   }
 
   const handleRunCode = async (code, selectedLang, is_run = true) => {
-    // 1. Tell Firebase we are now in the 'running' state (shows spinners to everyone)
+    if (!activeProblem || !activeProblem.title) {
+      console.warn("Cannot run code: Problem details are missing.");
+      return; 
+    }
+    
     await f.updateRoomData({ "gameState/roundStatus": "running" }, roomId, "");
 
     const payload = {
@@ -165,44 +121,36 @@ function Room(props) {
       language: selectedLang,
       code: code,
       is_run: is_run,
-      problem: {
-        title: activeProblem.title,
-        titleSlug: activeProblem.titleSlug,
-      },
+      problem: activeProblem,
     };
 
     try {
-      // 2. Call the new consolidated execution endpoint
       const data = await apiPost("runCode", payload);
-
       if (data.success) {
-        // The backend already saved these results to Firebase,
-        // but we can log them here for debugging.
         console.log("Execution successful:", data.results);
       } else {
         throw new Error(data.error || "Execution failed");
       }
     } catch (error) {
       console.error("Failed to run code:", error);
-
-      // Fallback: If the API fails, move back to coding state so the user isn't stuck
       await f.updateRoomData({ "gameState/roundStatus": "coding" }, roomId, "");
       alert("AI/Compiler Error: " + error.message);
     }
   };
 
+  // --- LIFECYCLE & SYNC ---
+
   useEffect(() => {
-    if (!roomId) {
-      return;
-    }
+    if (!roomId) return;
 
     const unsubscribe = f.subscribeToRoom(roomId, (roomData) => {
-      if (!roomData || !roomData.gameState) {
-        return;
-      }
+      if (!roomData || !roomData.gameState) return;
 
       try {
         const user_id = localStorage.getItem("id") || props.user_id;
+        
+        if (roomData.host_id) setHostId(roomData.host_id);
+
         const participantsObj = roomData.gameState.participants_list;
         const gameState = roomData.gameState;
 
@@ -216,17 +164,13 @@ function Room(props) {
           setTimer(gameState?.timerEndTime);
         }
 
-        if (gameStatus == "ended") {
+        if (gameStatus === "ended") {
           navigate(gameUrl);
         }
 
-        if (!participantsObj) {
-          console.warn("No participants list in game state");
-          return;
-        }
+        if (!participantsObj) return;
 
         setUsers(participantsObj);
-
         const participants = Object.keys(participantsObj);
 
         if (!participants.includes(user_id)) {
@@ -239,27 +183,17 @@ function Room(props) {
         setRoundStatus(currentStatus);
         setDriver(currentDriverId);
         setDriverName(participantsObj[currentDriverId]);
-        // setParticipants(participants); // participants not used
 
-        if (currentStatus === "initialising" && !currentProblem) {
-          updateLoading(false);
-        }
-
-        // if( currentStatus == "initialising"){
-
-        // }
-
-        if (currentStatus === "coding" && currentProblem) {
+        if (currentProblem) {
           setProblem(currentProblem);
-          updateLoading(false);
         }
 
-        if (currentStatus == "running") {
-          // setRunning(true); // running state not used
-        }
-        if (currentStatus == "submitted" || currentStatus == "executed") {
+        if (currentStatus === "initialising") {
+          updateLoading(false);
+        } else if (currentStatus === "coding" || currentStatus === "running") {
+          updateLoading(false); 
+        } else if (currentStatus === "submitted" || currentStatus === "executed") {
           setresults(probResults);
-          // setRunning(false);
           updateLoading(false);
         }
       } catch (error) {
@@ -270,77 +204,128 @@ function Room(props) {
     return () => {
       unsubscribe();
     };
-  }, [roomId]);
+  }, [roomId, navigate, props.user_id, f]);
 
-  // null | "problem" | "editor" | "chat"
+  // 🚀 PRESENCE FIX: Tell Firebase Server to watch our connection
+  useEffect(() => {
+    if (roomId && user_id && users && users[user_id]) {
+      f.setPresence(roomId, user_id, users[user_id]);
+    }
+  }, [roomId, user_id, users, f]); 
+
+
+  // 🚀 SELF-HEALING FIX: Auto-Rescue Orphaned Rooms
+  useEffect(() => {
+    if (!users || !driver_id || !host_id) return;
+
+    const activeUserIds = Object.keys(users);
+    
+    const driverIsMissing = !activeUserIds.includes(driver_id);
+    const hostIsMissing = !activeUserIds.includes(host_id);
+
+    if (driverIsMissing) {
+      console.log(`🚨 Zombie Driver Detected: ${driver_uname} dropped!`);
+
+      // 1. Host rescues. 2. If Host is dead, the first living person rescues.
+      const amITheRescueHero = (user_id === host_id) || (hostIsMissing && activeUserIds[0] === user_id);
+
+      if (amITheRescueHero) {
+        console.log("🛠️ Hero is auto-skipping the round to rescue the game...");
+        
+        updateLoading(true);
+        apiGet(`nextRound?roomId=${roomId}`)
+          .catch(err => {
+            console.error("Failed to auto-skip round:", err);
+            updateLoading(false);
+          });
+      }
+    }
+  }, [users, driver_id, driver_uname, user_id, host_id, roomId]);
+
+
+  // --- RENDER ---
 
   return (
     <>
       {show_loading && (
-        <div className="text-white animate-pulse">{loadingMessage}</div>
+        <div className="flex h-screen w-screen items-center justify-center bg-[#05071a]">
+            <div className="text-cyan-400 animate-pulse text-xl font-semibold">{loadingMessage}</div>
+        </div>
       )}
 
-      {roundStatus == "initialising" && show_prob_screen && !show_loading && (
-        <div>
+      {roundStatus === "initialising" && show_prob_screen && !show_loading && (
+        <div className="flex h-screen w-screen items-center justify-center bg-[#05071a]">
           <ProblemPicker
             topics={availableTopics}
             difficulties={["Easy", "Medium", "Hard"]}
             onConfirm={handleConfirmSelection}
-          ></ProblemPicker>
+          />
         </div>
       )}
 
-      {(roundStatus == "executed" || roundStatus == "submitted") && (
+      {(roundStatus === "executed" || roundStatus === "submitted") && (
         <div>
-          <div className="fixed inset-0 z-[100] flex items-center justify-center  backdrop-blur-sm">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-sm">
             <ProblemScore
               roundStatus={roundStatus}
               is_driver={driver_id === user_id}
               evaluation={results}
               onTryAgain={async () => {
-                const resetUpdates = {
+                await f.updateRoomData({
                   "gameState/roundStatus": "coding",
                   "gameState/judgeResults": null,
-                };
-                await f.updateRoomData(resetUpdates, roomId, "");
+                }, roomId, "");
               }}
               onStartNext={async () => {
                 await startNewProblem();
               }}
               onClose={async () => {
-                const gameStateUpdates = {
+                await f.updateRoomData({
                   "gameState/roundStatus": "coding",
                   "gameState/judgeResults": null,
-                };
-                await f.updateRoomData(gameStateUpdates, roomId, "");
+                }, roomId, "");
               }}
             />
           </div>
         </div>
       )}
 
-      {driver_uname && roundStatus == "initialising" && show_guest_screen && (
-        <div className="text-white">{driver_uname} is choosing a problem !</div>
+      {driver_uname && roundStatus === "initialising" && show_guest_screen && !show_loading && (
+        <div className="flex h-screen w-screen items-center justify-center bg-[#05071a]">
+            <div className="text-white text-xl">{driver_uname} is choosing a problem!</div>
+        </div>
       )}
 
-      {/* 🚀 THE FIX: Adding ?. to activeProblem prevents the React Crash */}
-      {(roundStatus == "coding" || roundStatus == "running") && (
+      {/* Safety Fallback if the database is missing the problem data */}
+      {(roundStatus === "coding" || roundStatus === "running") && !activeProblem && !show_loading && (
+        <div className="flex flex-col h-screen w-screen items-center justify-center bg-[#05071a]">
+            <div className="text-white text-xl mb-4">Syncing problem data...</div>
+            {driver_id === user_id && (
+              <button 
+                onClick={() => startNewProblem()} 
+                className="px-6 py-2 bg-cyan-500 rounded-xl text-white font-bold hover:bg-cyan-400"
+              >
+                Cancel & Start New Problem
+              </button>
+            )}
+        </div>
+      )}
+
+      {(roundStatus === "coding" || roundStatus === "running") && activeProblem && !show_loading && (
         <div>
           <div className="relative h-screen w-screen bg-[#05071a] text-white flex overflow-hidden">
             <div className="flex w-full h-full">
               {/* Problem Panel */}
               <div className="w-[30%] h-full ">
                 <Problem
-                  title={activeProblem?.title || "Loading..."} // Added ?. and a fallback
-                  question={
-                    activeProblem?.content || "Fetching problem details..."
-                  } // Added ?.
+                  title={activeProblem?.title || "Loading..."} 
+                  question={activeProblem?.content || "Fetching problem details..."} 
                   onFocus={() => setFocused("problem")}
                 />
               </div>
 
               {/* Editor/Whiteboard Panel */}
-              <div className="w-[45%]">
+              <div className="w-[45%] flex flex-col">
                 {showWhiteboard ? (
                   <Whiteboard
                     roomId={roomId}
@@ -366,7 +351,7 @@ function Room(props) {
                   />
                 )}
 
-                <div className=" p-4">
+                <div className="p-4 shrink-0">
                   {driver_id === user_id && (
                     <button
                       onClick={() => startNewProblem()}
@@ -387,7 +372,7 @@ function Room(props) {
               </div>
 
               {/* Chat Panel */}
-              <div className="w-[25%]">
+              <div className="w-[25%] h-full">
                 <Chat
                   roomId={roomId}
                   participants={users}
@@ -399,7 +384,7 @@ function Room(props) {
             </div>
 
             {/* Center Stage Popups */}
-            {roundStatus == "coding" && focused && (
+            {roundStatus === "coding" && focused && (
               <CenterStage onClose={() => setFocused(null)}>
                 {focused === "problem" && (
                   <Problem
@@ -426,7 +411,6 @@ function CenterStage({ children, onClose }) {
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
         onClick={onClose}
       />
-
       <div className="relative z-10 w-[80%] h-[85%] animate-scaleIn">
         {children}
       </div>

@@ -1,5 +1,3 @@
-version: '3.8'
-
 x-judge0-default-config: &default-config
   image: judge0/judge0:1.13.1
   volumes:
@@ -43,7 +41,11 @@ services:
   # 4. Judge0 Execution Worker
   judge0-worker:
     <<: *default-config
+    command: ["./scripts/workers"]
     privileged: true
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
     depends_on:
       postgres:
         condition: service_started

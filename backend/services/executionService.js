@@ -47,7 +47,8 @@ export async function submitBatch(testCases, code, languageId) {
         );
 
         if (!response.ok) {
-             throw new Error(`Judge0 API Error: ${response.status} ${response.statusText}`);
+             const errorText = await response.text();
+             throw new Error(`Judge0 API Error: ${response.status} - Details: ${errorText}`);
         }
 
         const result = await response.json();

@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { getDatabase, ref, set, remove, get, onValue, child, push, update, onChildAdded } from "firebase/database";
+// 🚀 FIX 1: Imported onDisconnect
+import { getDatabase, ref, set, remove, get, onValue, child, push, update, onChildAdded, onDisconnect } from "firebase/database";
 import { createContext, useContext } from "react";
 
 const firebaseConfig = {
@@ -22,7 +23,6 @@ const Firebasecontext = createContext(null);
 
 // --- Realtime Database Functions ---
 
-// Note: Use the 'db' instance we created at the top for efficiency
 function subscribeToRoom(roomId, callback) {
   const roomRef = ref(db, `root/rooms/${roomId}`);
   return onValue(roomRef, (snapshot) => callback(snapshot.val()));
@@ -63,6 +63,17 @@ function writeUserData(data, link) {
 function writeRoomData(data, link) {
   return set(ref(db, 'root/rooms/' + link), data);
 }
+
+// 🚀 FIX 2: Updated to v9 Modular Syntax and matched your 'root/rooms/' path
+const setPresence = (roomId, userId, username) => {
+  const userRef = ref(db, `root/rooms/${roomId}/gameState/participants_list/${userId}`);
+  
+  // Tell the Firebase server to delete this node if the websocket drops
+  onDisconnect(userRef).remove().then(() => {
+    // Only AFTER the disconnect hook is registered, set their name in the database
+    set(userRef, username);
+  });
+};
 
 // --- Whiteboard Functions ---
 
@@ -121,7 +132,8 @@ export const FirebaseProvider = (props) => {
       handleGoogleSignIn, sendMsg, subscribeToEditor, subscribeToChat, 
       writeCode, subscribeToRoom, updateRoomData, writeRoomData, 
       writeUserData, getRoomData, ensureAnonymousUser, pushWhiteboardStroke, 
-      subscribeToWhiteboardStrokes, subscribeToWhiteboardClear, clearWhiteboard 
+      subscribeToWhiteboardStrokes, subscribeToWhiteboardClear, clearWhiteboard,
+      setPresence // 🚀 FIX 3: Added to the provider so useFirebase() can access it
     }}>
       {props.children}
     </Firebasecontext.Provider>
